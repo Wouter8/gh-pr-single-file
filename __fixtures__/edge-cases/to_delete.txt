@@ -1,0 +1,1 @@
+this file exists only so that fixtures/edge-cases-pr can show a deletion in its diff.

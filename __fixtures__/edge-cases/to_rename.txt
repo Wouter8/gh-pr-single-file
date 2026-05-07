@@ -1,0 +1,1 @@
+this file is renamed to renamed_target.txt on fixtures/edge-cases-pr.
