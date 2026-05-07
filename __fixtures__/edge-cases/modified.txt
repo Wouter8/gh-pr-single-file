@@ -1,3 +1,4 @@
 # fixture: modified.txt
 
 this line existed before the fixture branch.
+this line was added by the fixture branch.
