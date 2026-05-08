@@ -1,5 +1,6 @@
 node_modules/
 .dom-inspection/
+.preview/
 test-results/
 playwright-report/
 playwright/.cache/

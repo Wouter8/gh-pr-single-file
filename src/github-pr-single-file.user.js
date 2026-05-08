@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub PR — single file at a time
 // @namespace    https://github.com/Wouter8/gh-pr-single-file
-// @version      0.9.0
+// @version      0.9.1
 // @description  Bitbucket-style one-file-at-a-time review UX for GitHub PR Files-changed pages
 // @author       Wouter van Acht
 // @homepageURL  https://github.com/Wouter8/gh-pr-single-file
@@ -65,7 +65,7 @@
   // We use that one run to wire up listeners that *react* to URL changes.
   var api = (typeof window !== 'undefined' ? (window.__ghPrSingleFile = window.__ghPrSingleFile || {}) : {});
   api.loaded = true;
-  api.version = '0.9.0';
+  api.version = '0.9.1';
   api.applyVisibility = applyVisibility;
   api.syncViewedDecorations = syncViewedDecorations;
   api.getFileWrappers = getFileWrappers;
@@ -253,18 +253,29 @@
       ' { gap: 0 !important; }\n' +
       // ── Viewed-state decorations on the file tree ──
       // Files marked "Viewed" via GitHub's per-file checkbox get muted +
-      // strikethrough; folders go full-opacity-but-checkmark when ALL of
-      // their descendant files are viewed.
+      // strikethrough + green ✓; folders get a green ✓ on their header row
+      // when ALL of their descendant files are viewed.
+      //
+      // NOTE on positioning: folder treeitem LIs WRAP all their descendant
+      // file-row LIs, so a folder LI's height covers the entire subtree. We
+      // therefore must position the folder ✓ at the *top* of the LI (where
+      // the folder header text sits) — `top: 50%` would place it in the
+      // middle of the file list, invisible.
       '[role="treeitem"][' + VIEWED_ATTR + '="1"]' +
       ' { position: relative; }\n' +
       '[role="treeitem"][' + VIEWED_ATTR + '="1"]:not([aria-expanded]) > *' +
       ' { opacity: 0.55; text-decoration: line-through; }\n' +
-      '[role="treeitem"][' + VIEWED_ATTR + '="1"]::after' +
+      '[role="treeitem"][' + VIEWED_ATTR + '="1"]:not([aria-expanded])::after' +
       ' { content: "✓"; position: absolute; right: 8px; top: 50%;' +
       '   transform: translateY(-50%); color: var(--fgColor-success,#1a7f37);' +
       '   font: 700 13px/1 -apple-system,BlinkMacSystemFont,sans-serif;' +
       '   pointer-events: none; }\n' +
-      '[role="treeitem"][' + VIEWED_ATTR + '="1"][aria-expanded] > *' +
+      '[role="treeitem"][' + VIEWED_ATTR + '="1"][aria-expanded]::after' +
+      ' { content: "✓"; position: absolute; right: 8px; top: 8px;' +
+      '   color: var(--fgColor-success,#1a7f37);' +
+      '   font: 700 13px/1 -apple-system,BlinkMacSystemFont,sans-serif;' +
+      '   pointer-events: none; }\n' +
+      '[role="treeitem"][' + VIEWED_ATTR + '="1"][aria-expanded] > *:first-child' +
       ' { color: var(--fgColor-success,#1a7f37); }';
     var style = document.createElement('style');
     style.id = STYLE_ID;
