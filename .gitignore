@@ -1,0 +1,8 @@
+node_modules/
+.dom-inspection/
+test-results/
+playwright-report/
+playwright/.cache/
+.auth/
+*.log
+.DS_Store

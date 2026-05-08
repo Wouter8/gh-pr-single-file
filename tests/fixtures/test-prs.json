@@ -1,0 +1,55 @@
+{
+  "generatedAt": "2026-05-07T15:15:59.420Z",
+  "repo": "Wouter8/gh-pr-single-file",
+  "fixtures": [
+    {
+      "key": "small-pr",
+      "branch": "fixtures/small-pr",
+      "prNumber": 1,
+      "url": "https://github.com/Wouter8/gh-pr-single-file/pull/1",
+      "filesUrl": "https://github.com/Wouter8/gh-pr-single-file/pull/1/files",
+      "expectedFileCount": 3,
+      "scenarios": [
+        "base behavior verification"
+      ]
+    },
+    {
+      "key": "medium-pr",
+      "branch": "fixtures/medium-pr",
+      "prNumber": 2,
+      "url": "https://github.com/Wouter8/gh-pr-single-file/pull/2",
+      "filesUrl": "https://github.com/Wouter8/gh-pr-single-file/pull/2/files",
+      "expectedFileCount": 10,
+      "scenarios": [
+        "file-tree clicks",
+        "hash-respected-on-load"
+      ]
+    },
+    {
+      "key": "large-pr",
+      "branch": "fixtures/large-pr",
+      "prNumber": 3,
+      "url": "https://github.com/Wouter8/gh-pr-single-file/pull/3",
+      "filesUrl": "https://github.com/Wouter8/gh-pr-single-file/pull/3/files",
+      "expectedFileCount": 65,
+      "scenarios": [
+        "coexistence with GitHub's native auto single-file mode"
+      ]
+    },
+    {
+      "key": "edge-cases-pr",
+      "branch": "fixtures/edge-cases-pr",
+      "prNumber": 4,
+      "url": "https://github.com/Wouter8/gh-pr-single-file/pull/4",
+      "filesUrl": "https://github.com/Wouter8/gh-pr-single-file/pull/4/files",
+      "expectedFileCount": 6,
+      "scenarios": [
+        "deleted file",
+        "renamed file",
+        "binary file",
+        "no newline at EOF",
+        "very long single line"
+      ]
+    }
+  ]
+}

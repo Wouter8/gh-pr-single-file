@@ -1,0 +1,22 @@
+{
+  "name": "github-pr-single-file",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Userscript that brings Bitbucket-style one-file-at-a-time PR review UX to GitHub, plus its Playwright test suite.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "inspect": "ts-node scripts/inspect-dom.ts",
+    "fixtures": "ts-node scripts/setup-fixture-prs.ts",
+    "fixtures:update": "ts-node scripts/setup-fixture-prs.ts --update"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^20.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  }
+}
