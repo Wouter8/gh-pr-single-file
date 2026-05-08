@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub PR — single file at a time
 // @namespace    https://github.com/Wouter8/gh-pr-single-file
-// @version      0.7.0
+// @version      0.8.0
 // @description  Bitbucket-style one-file-at-a-time review UX for GitHub PR Files-changed pages
 // @author       Wouter van Acht
 // @homepageURL  https://github.com/Wouter8/gh-pr-single-file
@@ -14,7 +14,7 @@
 // narrows the actual run condition to /files or /changes paths.
 // @match        https://github.com/*/pull/*
 // @match        https://github.com/*/pull/*/*
-// @include      /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/(files|changes)(?:[/?#].*)?$/
+// @include      /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+(?:\/[^?#]*)?(?:[?#].*)?$/
 // @run-at       document-start
 // @grant        none
 // @license      MIT
@@ -56,59 +56,103 @@
   var COLLAPSE_BTN_ID = 'ghpr-collapse-all-btn';
   var STORAGE_KEY = 'ghpr-single-file-disabled';
 
-  // ── Page guard ────────────────────────────────────────────────────────────
-  if (!isFilesPage(location.href)) return;
-
-  // ── Sync bootstrap: nothing here may touch document.head/body. ────────────
-  // At document-start (incl. Playwright's addInitScript), documentElement may
-  // not yet exist. We expose the API and listen for hashchange immediately;
-  // DOM-touching work is deferred to whenDocumentReady().
+  // ── API surface ───────────────────────────────────────────────────────────
+  // Set up the api object regardless of which PR sub-page we landed on. The
+  // script may be loaded on /pull/N (Conversation tab), then activated when
+  // the user navigates to /pull/N/files via Turbo / pushState — that nav
+  // doesn't reload the page, so the userscript only ever gets to run once.
+  // We use that one run to wire up listeners that *react* to URL changes.
   var api = (typeof window !== 'undefined' ? (window.__ghPrSingleFile = window.__ghPrSingleFile || {}) : {});
   api.loaded = true;
-  api.version = '0.7.0';
+  api.version = '0.8.0';
   api.applyVisibility = applyVisibility;
   api.getFileWrappers = getFileWrappers;
   api.getCurrentTargetId = getCurrentTargetId;
   api.isDisabled = function () { return !!api.disabled; };
   api.setDisabled = setDisabled;
   api.toggleDisabled = function () { setDisabled(!api.disabled); };
+  api.isActive = function () { return !!api.active; };
 
   api.disabled = readPersistedDisabled();
 
-  // GitHub's new UI intercepts file-tree clicks and updates the URL via
-  // history.replaceState — which does NOT fire `hashchange`. We listen to
-  // every signal that *might* indicate a hash change and re-evaluate. The
-  // userscript is idempotent: redundant calls are no-ops.
-  window.addEventListener('hashchange', applyVisibility);
-  window.addEventListener('popstate', applyVisibility);
+  // ── Always-on URL-change listeners ────────────────────────────────────────
+  // GitHub's PR pages use a mix of Turbo (pjax-style swaps) and React
+  // pushState/replaceState. Each navigation kind fires a different signal —
+  // we listen to all of them and let onUrlChange() decide whether we should
+  // be active on the new URL.
+  window.addEventListener('hashchange', onUrlChange);
+  window.addEventListener('popstate', onUrlChange);
+  document.addEventListener('turbo:load', onUrlChange);
+  document.addEventListener('turbo:render', onUrlChange);
+  document.addEventListener('turbo:frame-load', onUrlChange);
+  document.addEventListener('pjax:end', onUrlChange);
   patchHistoryMethods();
-  // Last-resort poll: covers exotic SPA routing patterns we haven't seen yet.
-  var lastSeenHash = location.hash;
+  // Last-resort poll: covers exotic SPA routing patterns we haven't seen yet,
+  // plus catches the case where the URL changes without firing any event we
+  // hooked.
+  var lastSeenUrl = location.href;
   setInterval(function () {
-    if (location.hash !== lastSeenHash) {
-      lastSeenHash = location.hash;
-      applyVisibility();
+    if (location.href !== lastSeenUrl) {
+      lastSeenUrl = location.href;
+      onUrlChange();
     }
   }, 300);
 
   whenDocumentReady(function () {
+    // First evaluation. If we're not on a files/changes page, this no-ops and
+    // waits for a navigation event.
+    onUrlChange();
+    // Belt-and-braces: late retries cover the case where the diff list is
+    // still rendering (React app hydrating) when the early checks ran.
+    setTimeout(onUrlChange, 250);
+    setTimeout(onUrlChange, 1000);
+    setTimeout(onUrlChange, 3000);
+  });
+
+  // ── State machine ─────────────────────────────────────────────────────────
+
+  function onUrlChange() {
+    if (isFilesPage(location.href)) {
+      ensureActive();
+    } else {
+      ensureInactive();
+    }
+  }
+
+  function ensureActive() {
+    api.active = true;
     injectStyles();
     syncActiveBodyFlag();
     applyVisibility();
     ensureToggleUI();
     ensureCollapseAllButton();
     startObserver();
-    // Belt-and-braces: a few delayed retries cover any case where the
-    // MutationObserver attached late (e.g. body wasn't there yet).
-    setTimeout(function () { applyVisibility(); ensureToggleUI(); ensureCollapseAllButton(); }, 250);
-    setTimeout(function () { applyVisibility(); ensureToggleUI(); ensureCollapseAllButton(); }, 1000);
-    setTimeout(function () { applyVisibility(); ensureToggleUI(); ensureCollapseAllButton(); }, 3000);
-  });
+  }
+
+  function ensureInactive() {
+    api.active = false;
+    if (document.body) document.body.removeAttribute('data-ghpr-active');
+    var t = document.getElementById(TOGGLE_ID);
+    if (t) t.remove();
+    var b = document.getElementById(COLLAPSE_BTN_ID);
+    if (b) b.remove();
+    // Clear any hide markers we'd previously set, so cached DOM looks
+    // normal if Turbo brings it back.
+    var hidden = document.querySelectorAll('[' + DATA_ATTR + '="1"]');
+    for (var i = 0; i < hidden.length; i++) {
+      hidden[i].setAttribute(DATA_ATTR, '0');
+    }
+    if (api.observer) {
+      try { api.observer.disconnect(); } catch (_) {}
+      api.observer = null;
+    }
+  }
 
   // ── Core logic ────────────────────────────────────────────────────────────
 
   function applyVisibility() {
     api.callCount = (api.callCount || 0) + 1;
+    if (!api.active) return false;
     var wrappers = getFileWrappers();
     api.lastWrapperCount = wrappers.length;
     if (wrappers.length === 0) return false;
@@ -263,13 +307,15 @@
   }
 
   function startObserver() {
-    if (api.observer) return;
     if (!document.body) return;
     // GitHub re-renders the diff list aggressively when users tick "Mark as
     // viewed", post review comments, or scroll into newly-rendered hunks.
-    // We watch for childList changes (added / removed wrappers); we
-    // deliberately do NOT observe attribute changes so we never see — and
-    // therefore never loop on — our own data-ghpr-hidden writes.
+    // Turbo also nukes-and-replaces the body on tab navigations, leaving any
+    // previous observer attached to a detached node — so we always disconnect
+    // any prior observer before re-attaching to the current body.
+    if (api.observer) {
+      try { api.observer.disconnect(); } catch (_) {}
+    }
     var queued = false;
     var observer = new MutationObserver(function () {
       if (queued) return;
@@ -279,8 +325,10 @@
         : function (cb) { return setTimeout(cb, 0); };
       schedule(function () {
         queued = false;
+        if (!api.active) return;
         applyVisibility();
         ensureCollapseAllButton();
+        ensureToggleUI();
       });
     });
     observer.observe(document.body, { childList: true, subtree: true });
@@ -353,17 +401,17 @@
       var r = history.replaceState;
       history.pushState = function () {
         var v = p.apply(this, arguments);
-        try { applyVisibility(); } catch (_) {}
+        try { onUrlChange(); } catch (_) {}
         return v;
       };
       history.replaceState = function () {
         var v = r.apply(this, arguments);
-        try { applyVisibility(); } catch (_) {}
+        try { onUrlChange(); } catch (_) {}
         return v;
       };
     } catch (_) {
       // Some browsers / sandboxed contexts may not allow patching. We still
-      // have hashchange + the polling fallback.
+      // have hashchange + Turbo events + the polling fallback.
     }
   }
 

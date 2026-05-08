@@ -2,6 +2,9 @@ import { expect, test } from '@playwright/test';
 import { getFixture, injectUserscriptForTest, FILE_WRAPPER_SELECTOR } from '../helpers/inject-userscript';
 import { collectInnerIds, visibleIds, waitForUserscriptToSettle, waitForWrappersToRender } from '../helpers/visibility';
 
+// (small style note) every test in this file uses the small-pr or medium-pr
+// fixture — they're the cheapest navigations.
+
 test.describe('hashchange', () => {
   test('programmatic hash change switches the visible file', async ({ page }) => {
     await injectUserscriptForTest(page);
@@ -27,6 +30,54 @@ test.describe('hashchange', () => {
     const visibleAfter = await visibleIds(page);
     expect(visibleAfter.length, 'after hashchange').toBe(1);
     expect(visibleAfter[0], 'after hashchange id').toBe(targetId);
+  });
+});
+
+test.describe('SPA tab navigation', () => {
+  test('script activates after navigating Conversation → Files via Turbo / pushState (no hard refresh)', async ({ page }) => {
+    await injectUserscriptForTest(page);
+
+    const fx = getFixture('small-pr');
+    // Land on the Conversation tab (no /files in URL). Userscript should load
+    // but stay inactive — no toggle UI visible yet.
+    const conversationUrl = fx.url; // ".../pull/N", without /files
+    await page.goto(conversationUrl, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2000);
+
+    const beforeNav = await page.evaluate(() => ({
+      loaded: (window as any).__ghPrSingleFile?.loaded,
+      active: (window as any).__ghPrSingleFile?.active,
+      toggleInDom: !!document.getElementById('ghpr-single-file-toggle'),
+    }));
+    expect(beforeNav.loaded, 'script loaded on conversation tab').toBe(true);
+    expect(beforeNav.active, 'NOT active on conversation tab').not.toBe(true);
+    expect(beforeNav.toggleInDom, 'no toggle on conversation tab').toBe(false);
+
+    // Click the "Files changed" tab — GitHub uses an SPA navigation here.
+    // We click the first link whose href ends in /files. Falling back to a
+    // direct pushState if the click target is reorganised.
+    await page.evaluate(() => {
+      const link = Array.from(document.querySelectorAll('a[href]')).find((a) =>
+        /\/pull\/\d+\/files(?:\?|$)/.test((a as HTMLAnchorElement).href),
+      ) as HTMLAnchorElement | undefined;
+      if (link) link.click();
+      else history.pushState({}, '', location.pathname.replace(/\/?$/, '/files'));
+    });
+    await waitForWrappersToRender(page, 2);
+    await waitForUserscriptToSettle(page);
+
+    const afterNav = await page.evaluate(() => ({
+      url: location.href,
+      active: (window as any).__ghPrSingleFile?.active,
+      toggleInDom: !!document.getElementById('ghpr-single-file-toggle'),
+      lastWrapperCount: (window as any).__ghPrSingleFile?.lastWrapperCount,
+    }));
+    expect(afterNav.active, 'active after SPA nav').toBe(true);
+    expect(afterNav.toggleInDom, 'toggle present after SPA nav').toBe(true);
+    expect(afterNav.lastWrapperCount, 'wrappers detected').toBeGreaterThan(0);
+
+    const visible = await visibleIds(page);
+    expect(visible.length, 'exactly one file visible after SPA nav').toBe(1);
   });
 });
 
