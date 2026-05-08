@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub PR — single file at a time
 // @namespace    https://github.com/Wouter8/gh-pr-single-file
-// @version      0.8.0
+// @version      0.9.0
 // @description  Bitbucket-style one-file-at-a-time review UX for GitHub PR Files-changed pages
 // @author       Wouter van Acht
 // @homepageURL  https://github.com/Wouter8/gh-pr-single-file
@@ -51,6 +51,7 @@
 
   var STYLE_ID = 'ghpr-style';
   var DATA_ATTR = 'data-ghpr-hidden';
+  var VIEWED_ATTR = 'data-ghpr-viewed';
   var TOGGLE_ID = 'ghpr-single-file-toggle';
   var TOGGLE_INPUT_ID = 'ghpr-single-file-toggle-input';
   var COLLAPSE_BTN_ID = 'ghpr-collapse-all-btn';
@@ -64,8 +65,9 @@
   // We use that one run to wire up listeners that *react* to URL changes.
   var api = (typeof window !== 'undefined' ? (window.__ghPrSingleFile = window.__ghPrSingleFile || {}) : {});
   api.loaded = true;
-  api.version = '0.8.0';
+  api.version = '0.9.0';
   api.applyVisibility = applyVisibility;
+  api.syncViewedDecorations = syncViewedDecorations;
   api.getFileWrappers = getFileWrappers;
   api.getCurrentTargetId = getCurrentTargetId;
   api.isDisabled = function () { return !!api.disabled; };
@@ -126,6 +128,7 @@
     applyVisibility();
     ensureToggleUI();
     ensureCollapseAllButton();
+    syncViewedDecorations();
     startObserver();
   }
 
@@ -141,6 +144,11 @@
     var hidden = document.querySelectorAll('[' + DATA_ATTR + '="1"]');
     for (var i = 0; i < hidden.length; i++) {
       hidden[i].setAttribute(DATA_ATTR, '0');
+    }
+    // Clear viewed decorations.
+    var decorated = document.querySelectorAll('[' + VIEWED_ATTR + ']');
+    for (var j = 0; j < decorated.length; j++) {
+      decorated[j].removeAttribute(VIEWED_ATTR);
     }
     if (api.observer) {
       try { api.observer.disconnect(); } catch (_) {}
@@ -242,7 +250,22 @@
       // animation, placeholder SVGs) get gap-spacing painted between them and
       // the file, producing phantom whitespace.
       'body[data-ghpr-active="1"] [data-testid="progressive-diffs-list"]' +
-      ' { gap: 0 !important; }';
+      ' { gap: 0 !important; }\n' +
+      // ── Viewed-state decorations on the file tree ──
+      // Files marked "Viewed" via GitHub's per-file checkbox get muted +
+      // strikethrough; folders go full-opacity-but-checkmark when ALL of
+      // their descendant files are viewed.
+      '[role="treeitem"][' + VIEWED_ATTR + '="1"]' +
+      ' { position: relative; }\n' +
+      '[role="treeitem"][' + VIEWED_ATTR + '="1"]:not([aria-expanded]) > *' +
+      ' { opacity: 0.55; text-decoration: line-through; }\n' +
+      '[role="treeitem"][' + VIEWED_ATTR + '="1"]::after' +
+      ' { content: "✓"; position: absolute; right: 8px; top: 50%;' +
+      '   transform: translateY(-50%); color: var(--fgColor-success,#1a7f37);' +
+      '   font: 700 13px/1 -apple-system,BlinkMacSystemFont,sans-serif;' +
+      '   pointer-events: none; }\n' +
+      '[role="treeitem"][' + VIEWED_ATTR + '="1"][aria-expanded] > *' +
+      ' { color: var(--fgColor-success,#1a7f37); }';
     var style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = css;
@@ -329,6 +352,7 @@
         applyVisibility();
         ensureCollapseAllButton();
         ensureToggleUI();
+        syncViewedDecorations();
       });
     });
     observer.observe(document.body, { childList: true, subtree: true });
@@ -374,6 +398,87 @@
       filter.appendChild(btn);
     } else if (tree.parentElement) {
       tree.parentElement.insertBefore(btn, tree);
+    }
+  }
+
+  // ── Viewed-state decorations on the file tree ─────────────────────────────
+
+  function syncViewedDecorations() {
+    if (!document.body) return;
+
+    // Step 1: build a {diffId → viewed} map from the diff entries on the page.
+    // Each diff has a per-file "Viewed" / "Not Viewed" toggle; aria-label
+    // reflects the *current* state.
+    var viewedById = Object.create(null);
+    var diffs = document.querySelectorAll('[id^="diff-"][data-targeted]');
+    if (diffs.length === 0) {
+      // Old UI fallback: copilot-diff-entry wraps an inner [id^="diff-"] div.
+      diffs = document.querySelectorAll('copilot-diff-entry');
+    }
+    for (var i = 0; i < diffs.length; i++) {
+      var d = diffs[i];
+      var diffId;
+      if (d.id && d.id.indexOf('diff-') === 0) {
+        diffId = d.id;
+      } else {
+        var inner = d.querySelector('[id^="diff-"]');
+        diffId = inner ? inner.id : null;
+      }
+      if (!diffId) continue;
+      var hasViewed = !!d.querySelector('[aria-label="Viewed"]');
+      var hasNotViewed = !!d.querySelector('[aria-label="Not Viewed"]');
+      // If neither label is found (e.g. user not logged in), skip — we have
+      // no signal.
+      if (hasViewed && !hasNotViewed) viewedById[diffId] = true;
+      else if (hasNotViewed && !hasViewed) viewedById[diffId] = false;
+    }
+
+    if (Object.keys(viewedById).length === 0) return;
+
+    // Step 2: decorate file tree items.
+    var allItems = document.querySelectorAll('[role="treeitem"]');
+    var fileItems = [];
+    for (var j = 0; j < allItems.length; j++) {
+      var item = allItems[j];
+      if (item.hasAttribute('aria-expanded')) continue; // it's a folder
+      fileItems.push(item);
+      var anchor = item.querySelector('a[href^="#diff-"]');
+      if (!anchor) continue;
+      var href = anchor.getAttribute('href') || '';
+      var fileDiffId = href.slice(1).replace(/[?].*$/, '');
+      var viewed = viewedById[fileDiffId];
+      if (typeof viewed === 'boolean') {
+        var want = viewed ? '1' : '0';
+        if (item.getAttribute(VIEWED_ATTR) !== want) {
+          item.setAttribute(VIEWED_ATTR, want);
+        }
+      }
+    }
+
+    // Step 3: roll up to folders. Tree-item ids are full repo-relative paths
+    // (e.g. "src/components/Button.tsx"), folder ids are the directory prefix
+    // (e.g. "src/components") — so a child file's id starts with `<folder-id>/`.
+    for (var k = 0; k < allItems.length; k++) {
+      var folder = allItems[k];
+      if (!folder.hasAttribute('aria-expanded')) continue;
+      if (!folder.id) continue;
+      var prefix = folder.id + '/';
+      var descendantsViewed = 0;
+      var descendantsTotal = 0;
+      for (var n = 0; n < fileItems.length; n++) {
+        var f = fileItems[n];
+        if (!f.id || f.id.indexOf(prefix) !== 0) continue;
+        descendantsTotal++;
+        if (f.getAttribute(VIEWED_ATTR) === '1') descendantsViewed++;
+      }
+      if (descendantsTotal === 0) {
+        if (folder.hasAttribute(VIEWED_ATTR)) folder.removeAttribute(VIEWED_ATTR);
+        continue;
+      }
+      var folderWant = descendantsViewed === descendantsTotal ? '1' : '0';
+      if (folder.getAttribute(VIEWED_ATTR) !== folderWant) {
+        folder.setAttribute(VIEWED_ATTR, folderWant);
+      }
     }
   }
 

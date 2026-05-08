@@ -54,15 +54,18 @@ test.describe('SPA tab navigation', () => {
     expect(beforeNav.toggleInDom, 'no toggle on conversation tab').toBe(false);
 
     // Click the "Files changed" tab — GitHub uses an SPA navigation here.
-    // We click the first link whose href ends in /files. Falling back to a
-    // direct pushState if the click target is reorganised.
-    await page.evaluate(() => {
-      const link = Array.from(document.querySelectorAll('a[href]')).find((a) =>
-        /\/pull\/\d+\/files(?:\?|$)/.test((a as HTMLAnchorElement).href),
+    // We must use Playwright's page.click (which dispatches a real Event
+    // sequence) — `link.click()` from page.evaluate fires only the native
+    // click event, which React's synthetic-event system happily ignores, so
+    // the navigation never happens.
+    const tabHref = await page.evaluate(() => {
+      const a = Array.from(document.querySelectorAll('a[href]')).find((el) =>
+        /\/pull\/\d+\/(files|changes)(?:[/?#]|$)/.test((el as HTMLAnchorElement).href),
       ) as HTMLAnchorElement | undefined;
-      if (link) link.click();
-      else history.pushState({}, '', location.pathname.replace(/\/?$/, '/files'));
+      return a?.getAttribute('href') ?? null;
     });
+    expect(tabHref, '"Files changed" link must exist on the conversation tab').toBeTruthy();
+    await page.click(`a[href="${tabHref}"]`);
     await waitForWrappersToRender(page, 2);
     await waitForUserscriptToSettle(page);
 
