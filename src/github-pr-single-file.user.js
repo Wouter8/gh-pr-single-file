@@ -185,9 +185,24 @@
 
     var targetId = getCurrentTargetId();
     if (!targetId) {
-      var firstInner = getInnerDiffId(wrappers[0]);
-      if (!firstInner) return false;
-      targetId = firstInner;
+      // No diff hash in the URL. This happens during PR actions like
+      // anchor-navigation to a comment (#issuecomment-…) or the brief
+      // moment after Turbo strips the hash. If we held a previous diff
+      // target and it's still present in the diff list, stick with it.
+      // Otherwise fall back to the first file (original behaviour).
+      if (api.lastTargetId) {
+        for (var p = 0; p < wrappers.length; p++) {
+          if (getInnerDiffId(wrappers[p]) === api.lastTargetId) {
+            targetId = api.lastTargetId;
+            break;
+          }
+        }
+      }
+      if (!targetId) {
+        var firstInner = getInnerDiffId(wrappers[0]);
+        if (!firstInner) return false;
+        targetId = firstInner;
+      }
     }
 
     var changed = false;
