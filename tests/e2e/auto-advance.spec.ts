@@ -131,17 +131,35 @@ test.describe('auto-advance on mark-as-viewed', () => {
     await goToFile(page, visible);
     expect(await currentHashDiffId(page)).toBe(visible);
 
-    // Click the tree ✓ on the OTHER row.
-    await page.evaluate((diffId) => {
+    // Click the tree ✓ on the OTHER (non-visible) row. Capture whether the
+    // button actually existed so a missing button can't make this test pass
+    // vacuously.
+    const clicked = await page.evaluate((diffId) => {
       const anchors = Array.from(
         document.querySelectorAll('[role="treeitem"]:not([aria-expanded]) a[href^="#diff-"]'),
       ) as HTMLAnchorElement[];
       const match = anchors.find((a) => (a.getAttribute('href') || '').indexOf('#' + diffId) === 0);
       const row = match?.closest('[role="treeitem"]') as HTMLElement | null;
       const btn = row?.querySelector(':scope > .ghpr-tree-viewed-toggle') as HTMLElement | null;
-      btn?.click();
+      if (!btn) return false;
+      btn.click();
+      return true;
     }, other);
+    expect(clicked, 'tree ✓ button for the non-visible file was found and clicked').toBe(true);
     await page.waitForTimeout(1500);
+
+    // Prove a real viewed-transition happened: the OTHER file's tree row is
+    // now decorated viewed. This makes the unchanged hash demonstrate the
+    // "only advance the currently-visible file" guard, not a silent no-op.
+    const otherViewed = await page.evaluate((diffId) => {
+      const anchors = Array.from(
+        document.querySelectorAll('[role="treeitem"]:not([aria-expanded]) a[href^="#diff-"]'),
+      ) as HTMLAnchorElement[];
+      const match = anchors.find((a) => (a.getAttribute('href') || '').indexOf('#' + diffId) === 0);
+      const row = match?.closest('[role="treeitem"]') as HTMLElement | null;
+      return row ? row.getAttribute('data-ghpr-viewed') : null;
+    }, other);
+    expect(otherViewed, 'the non-visible file was actually marked viewed').toBe('1');
 
     expect(await currentHashDiffId(page), 'hash unchanged when marking a non-visible file').toBe(visible);
   });
