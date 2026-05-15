@@ -137,6 +137,10 @@
   function ensureInactive() {
     api.active = false;
     api.lastTargetId = null;
+    // Wipe session caches so a re-entry to /files (potentially after the
+    // user changed viewed-state in another tab) starts fresh.
+    api.pathByDiffId = Object.create(null);
+    api.prevViewedById = null;
     if (document.body) document.body.removeAttribute('data-ghpr-active');
     var t = document.getElementById(TOGGLE_ID);
     if (t) t.remove();
@@ -455,14 +459,12 @@
 
   function syncViewedDecorations() {
     if (!document.body) return;
+    if (!api.pathByDiffId) api.pathByDiffId = Object.create(null);
 
     // Step 1: build a {diffId → viewed} map from the diff entries on the page.
-    // Each diff has a per-file "Viewed" / "Not Viewed" toggle; aria-label
-    // reflects the *current* state.
     var viewedById = Object.create(null);
     var diffs = document.querySelectorAll('[id^="diff-"][data-targeted]');
     if (diffs.length === 0) {
-      // Old UI fallback: copilot-diff-entry wraps an inner [id^="diff-"] div.
       diffs = document.querySelectorAll('copilot-diff-entry');
     }
     for (var i = 0; i < diffs.length; i++) {
@@ -477,25 +479,23 @@
       if (!diffId) continue;
       var hasViewed = !!d.querySelector('[aria-label="Viewed"]');
       var hasNotViewed = !!d.querySelector('[aria-label="Not Viewed"]');
-      // If neither label is found (e.g. user not logged in), skip — we have
-      // no signal.
       if (hasViewed && !hasNotViewed) viewedById[diffId] = true;
       else if (hasNotViewed && !hasViewed) viewedById[diffId] = false;
     }
 
     if (Object.keys(viewedById).length === 0) return;
 
-    // Step 2: decorate file tree items.
+    // Step 2: decorate file tree items + refresh the path cache.
     var allItems = document.querySelectorAll('[role="treeitem"]');
-    var fileItems = [];
     for (var j = 0; j < allItems.length; j++) {
       var item = allItems[j];
-      if (item.hasAttribute('aria-expanded')) continue; // it's a folder
-      fileItems.push(item);
+      if (item.hasAttribute('aria-expanded')) continue; // folder
       var anchor = item.querySelector('a[href^="#diff-"]');
       if (!anchor) continue;
       var href = anchor.getAttribute('href') || '';
       var fileDiffId = href.slice(1).replace(/[?].*$/, '');
+      // Remember path↔diffId for use after the folder is collapsed.
+      if (item.id) api.pathByDiffId[fileDiffId] = item.id;
       var viewed = viewedById[fileDiffId];
       if (typeof viewed === 'boolean') {
         var want = viewed ? '1' : '0';
@@ -505,9 +505,8 @@
       }
     }
 
-    // Step 3: roll up to folders. Tree-item ids are full repo-relative paths
-    // (e.g. "src/components/Button.tsx"), folder ids are the directory prefix
-    // (e.g. "src/components") — so a child file's id starts with `<folder-id>/`.
+    // Step 3: roll up to folders via the path cache so the rollup survives
+    // a collapse (when descendant file rows are removed from the DOM).
     for (var k = 0; k < allItems.length; k++) {
       var folder = allItems[k];
       if (!folder.hasAttribute('aria-expanded')) continue;
@@ -515,11 +514,12 @@
       var prefix = folder.id + '/';
       var descendantsViewed = 0;
       var descendantsTotal = 0;
-      for (var n = 0; n < fileItems.length; n++) {
-        var f = fileItems[n];
-        if (!f.id || f.id.indexOf(prefix) !== 0) continue;
+      for (var cachedDiffId in api.pathByDiffId) {
+        var cachedPath = api.pathByDiffId[cachedDiffId];
+        if (!cachedPath || cachedPath.indexOf(prefix) !== 0) continue;
+        if (!(cachedDiffId in viewedById)) continue; // unknown → skip
         descendantsTotal++;
-        if (f.getAttribute(VIEWED_ATTR) === '1') descendantsViewed++;
+        if (viewedById[cachedDiffId] === true) descendantsViewed++;
       }
       if (descendantsTotal === 0) {
         if (folder.hasAttribute(VIEWED_ATTR)) folder.removeAttribute(VIEWED_ATTR);
