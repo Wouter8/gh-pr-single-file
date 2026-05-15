@@ -530,6 +530,28 @@
         folder.setAttribute(VIEWED_ATTR, folderWant);
       }
     }
+
+    // Step 4: detect "not viewed → viewed" transitions and auto-advance.
+    // First run: just snapshot, never advance (otherwise every pre-viewed
+    // file would look like a fresh transition).
+    var prev = api.prevViewedById;
+    api.prevViewedById = viewedById;
+    if (!prev) return;
+    if (api.disabled) return;
+
+    var currentTargetId = getCurrentTargetId();
+    if (!currentTargetId) return;
+    // We only advance when the file being marked is the one the user is
+    // currently looking at — see design doc, fix #4.
+    if (viewedById[currentTargetId] !== true) return;
+    if (prev[currentTargetId] === true) return; // not a fresh transition
+
+    var nextDiffId = findNextSiblingDiffId(currentTargetId);
+    if (!nextDiffId) return;
+    if (nextDiffId === currentTargetId) return;
+    try {
+      location.hash = '#' + nextDiffId;
+    } catch (_) {}
   }
 
   // ── Per-tree-row "viewed" toggle button ───────────────────────────────────
@@ -610,6 +632,39 @@
     } else if (!wantViewed && viewedBtn) {
       viewedBtn.click();
     }
+  }
+
+  function findNextSiblingDiffId(diffId) {
+    if (!api.pathByDiffId) return null;
+    var path = api.pathByDiffId[diffId];
+    if (!path) return null;
+    var lastSlash = path.lastIndexOf('/');
+    var prefix = lastSlash === -1 ? '' : path.slice(0, lastSlash + 1);
+    // Walk tree file rows in DOM order; pick the first one AFTER `path`
+    // whose id has the same direct parent (no extra slash after the prefix).
+    var rows = document.querySelectorAll('[role="treeitem"]:not([aria-expanded])');
+    var passed = false;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var rid = row.id;
+      if (!rid) continue;
+      if (!passed) {
+        if (rid === path) passed = true;
+        continue;
+      }
+      // Direct-sibling test.
+      if (prefix === '') {
+        if (rid.indexOf('/') !== -1) continue;
+      } else {
+        if (rid.indexOf(prefix) !== 0) continue;
+        if (rid.indexOf('/', prefix.length) !== -1) continue;
+      }
+      var anchor = row.querySelector('a[href^="#diff-"]');
+      if (!anchor) continue;
+      var href = anchor.getAttribute('href') || '';
+      return href.slice(1).replace(/[?].*$/, '');
+    }
+    return null;
   }
 
   function collapseAllFolders() {
