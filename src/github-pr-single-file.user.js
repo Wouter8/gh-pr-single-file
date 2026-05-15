@@ -136,6 +136,7 @@
 
   function ensureInactive() {
     api.active = false;
+    api.lastTargetId = null;
     if (document.body) document.body.removeAttribute('data-ghpr-active');
     var t = document.getElementById(TOGGLE_ID);
     if (t) t.remove();
