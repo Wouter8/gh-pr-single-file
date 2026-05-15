@@ -483,7 +483,15 @@
       else if (hasNotViewed && !hasViewed) viewedById[diffId] = false;
     }
 
-    if (Object.keys(viewedById).length === 0) return;
+    if (Object.keys(viewedById).length === 0) {
+      // Diff list transiently empty (e.g. Turbo clears it during comment
+      // submit). Drop the snapshot so the next populated run re-inits via
+      // the first-run guard instead of diffing against stale data — which
+      // would otherwise look like a fresh transition and spuriously
+      // auto-advance.
+      api.prevViewedById = null;
+      return;
+    }
 
     // Step 2: decorate file tree items + refresh the path cache.
     var allItems = document.querySelectorAll('[role="treeitem"]');
