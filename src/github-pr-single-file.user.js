@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub PR — single file at a time
 // @namespace    https://github.com/Wouter8/gh-pr-single-file
-// @version      0.10.0
+// @version      0.11.0
 // @description  Bitbucket-style one-file-at-a-time review UX for GitHub PR Files-changed pages
 // @author       Wouter van Acht
 // @homepageURL  https://github.com/Wouter8/gh-pr-single-file
@@ -66,7 +66,7 @@
   // We use that one run to wire up listeners that *react* to URL changes.
   var api = (typeof window !== 'undefined' ? (window.__ghPrSingleFile = window.__ghPrSingleFile || {}) : {});
   api.loaded = true;
-  api.version = '0.10.0';
+  api.version = '0.11.0';
   api.applyVisibility = applyVisibility;
   api.syncViewedDecorations = syncViewedDecorations;
   api.getFileWrappers = getFileWrappers;
