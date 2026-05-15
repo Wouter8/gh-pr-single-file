@@ -291,7 +291,7 @@
       ' { top: 4px; }\n' +
       // Visible when the row is hovered, or whenever the row is viewed
       // (so users know what state it's in without hovering).
-      '[role="treeitem"]:hover > .' + TREE_VIEWED_BTN_CLASS + ',' +
+      '[role="treeitem"]:hover:not(:has([role="treeitem"]:hover)) > .' + TREE_VIEWED_BTN_CLASS + ',' +
       ' [role="treeitem"][' + VIEWED_ATTR + '="1"] > .' + TREE_VIEWED_BTN_CLASS +
       ' { opacity: 1; }\n' +
       '[role="treeitem"][' + VIEWED_ATTR + '="1"] > .' + TREE_VIEWED_BTN_CLASS +
